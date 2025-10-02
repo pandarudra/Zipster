@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import { exec } from "child_process";
-import { writeFile } from "fs/promises";
+import { decompressData } from "@/lib/loadHuffman";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,74 +12,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create temporary directory for processing
-    const tempDir = path.join(process.cwd(), "temp");
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    // Convert base64 back to buffer for decompression
+    const inputBuffer = Buffer.from(fileContent, "base64");
+    const inputData = new Uint8Array(inputBuffer);
 
-    // Create temporary file paths
-    const timestamp = Date.now();
-    const inputPath = path.join(tempDir, `${timestamp}_${fileName}`);
+    // Decompress the data using WASM
+    const decompressedData = await decompressData(inputData);
 
-    // For decompression, remove .huff extension for output
-    let outputPath = inputPath;
+    // Convert decompressed data back to base64
+    const decompressedBuffer = Buffer.from(decompressedData);
+    const base64Result = decompressedBuffer.toString("base64");
+
+    // Generate output filename (remove .huff extension if present)
+    let outputFileName = fileName;
     if (fileName.endsWith(".huff")) {
-      outputPath = inputPath.slice(0, -fileName.length) + fileName.slice(0, -5);
+      outputFileName = fileName.slice(0, -5);
     } else {
-      outputPath = inputPath + ".decompressed";
+      outputFileName = fileName + ".decompressed";
     }
 
-    // Convert base64 back to buffer and save temporarily
-    const buffer = Buffer.from(fileContent, "base64");
-    await writeFile(inputPath, buffer);
-
-    return new Promise<NextResponse>((resolve) => {
-      exec(
-        `"${path.join(
-          process.cwd(),
-          "../huffman-core/huffman.exe"
-        )}" decompress "${inputPath}" "${outputPath}"`,
-        (error, stdout, stderr) => {
-          // Clean up input file
-          fs.unlink(inputPath, () => {});
-
-          if (error) {
-            return resolve(
-              NextResponse.json(
-                { error: stderr || error.message },
-                { status: 500 }
-              )
-            );
-          }
-
-          try {
-            const fileBuffer = fs.readFileSync(outputPath);
-            const base64Result = fileBuffer.toString("base64");
-
-            // Clean up output file
-            fs.unlink(outputPath, () => {});
-
-            return resolve(
-              NextResponse.json({
-                fileContent: base64Result,
-                fileName: path.basename(outputPath),
-                originalSize: buffer.length,
-                decompressedSize: fileBuffer.length,
-              })
-            );
-          } catch {
-            return resolve(
-              NextResponse.json(
-                { error: "Failed to read decompressed file" },
-                { status: 500 }
-              )
-            );
-          }
-        }
-      );
+    return NextResponse.json({
+      fileContent: base64Result,
+      fileName: outputFileName,
+      originalSize: inputBuffer.length,
+      decompressedSize: decompressedData.length,
     });
-  } catch {
+  } catch (error) {
+    console.error("Decompression error:", error);
     return NextResponse.json(
       { error: "Failed to process decompression request" },
       { status: 500 }
