@@ -1,5 +1,9 @@
 # Zipster 📦
 
+<div align="center">
+  <img src="icon.png" alt="Zipster Icon" width="128" height="128">
+</div>
+
 A modern, high-performance file compression and decompression web application powered by Huffman coding algorithm and WebAssembly.
 
 ![Zipster Preview](https://img.shields.io/badge/Next.js-15.5.4-black?style=for-the-badge&logo=next.js)
